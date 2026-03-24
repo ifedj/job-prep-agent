@@ -124,7 +124,15 @@
           if (resumeFile) {
             const fd = new FormData();
             fd.append('file', resumeFile);
-            await api.upload('/profile/resume', fd);
+            try {
+              await api.upload('/profile/resume', fd);
+            } catch (uploadErr) {
+              // Resume upload failed (e.g. auth issue on serverless) — warn but continue
+              console.warn('Resume upload failed:', uploadErr.message);
+              setError(`Resume upload failed: ${uploadErr.message}. You can add it later from your profile.`);
+              // Give them 2s to read the warning, then move on
+              await new Promise(r => setTimeout(r, 2000));
+            }
           }
           setStep(3);
         } catch (e) { setError(e.message); }
@@ -132,8 +140,8 @@
       }
 
       async function connectGoogle() {
-        const data = await api.authGet('/google/start').catch(e => { setError(e.message); return null; });
-        if (data) window.location.href = data.authorization_url;
+        // Navigate directly — backend returns a redirect to Google's OAuth page
+        window.location.href = '/auth/google/start';
       }
 
       return (
