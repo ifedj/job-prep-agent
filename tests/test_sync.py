@@ -138,6 +138,17 @@ class TestEmailDeduplication:
             generated_at=datetime.utcnow(),
         )
         db.add(pack)
+        # Add a fake OAuthToken so email_sender takes the ggmail path (which is mocked)
+        # ggmail.send_email itself is patched in each test, so the token value doesn't matter
+        from backend.models import OAuthToken
+        oauth = OAuthToken(
+            user_id=test_user.id,
+            provider="google",
+            access_token="fake-encrypted-token",
+            refresh_token="fake-encrypted-refresh",
+            scopes="https://mail.google.com/",
+        )
+        db.add(oauth)
         db.commit()
         db.refresh(pack)
         return pack

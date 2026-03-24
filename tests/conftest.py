@@ -174,24 +174,32 @@ def make_claude_classification(label: str, confidence: float, company: str = Non
 
 
 def make_claude_prep_pack():
-    """Return a mock Anthropic response for prep pack generation."""
+    """Return a mock Anthropic response for prep pack generation.
+
+    prep_generator.py uses a plain-text JSON prompt (not tool_use), so the
+    mock must expose the JSON string via .content[0].text, not .content[0].input.
+    """
     mock_response = MagicMock()
     mock_block = MagicMock()
-    mock_block.type = "tool_use"
-    mock_block.input = {
+    mock_block.text = json.dumps({
         "meeting_summary": "This is a technical interview at Acme Corp for a Software Engineer role.",
         "talking_points": [
             "Highlight distributed systems experience",
             "Discuss payment-api project impact",
             "Ask about engineering team structure",
+            "Mention the ML pipeline project",
         ],
         "expected_questions": [
             {"question": "Tell me about yourself", "suggested_answer": "Focus on your 5 years of Python experience."},
             {"question": "System design: design a URL shortener", "suggested_answer": "Start with requirements."},
+            {"question": "Tell me about a hard bug you fixed", "suggested_answer": "Use STAR format."},
+            {"question": "Why Acme Corp?", "suggested_answer": "Research their products and mission."},
         ],
         "questions_to_ask": [
             "What does the on-call rotation look like?",
             "How is engineering impact measured?",
+            "What are the biggest technical challenges right now?",
+            "How does the team handle code review?",
         ],
         "prep_checklist": [
             "Review your resume top-to-bottom",
@@ -206,6 +214,6 @@ def make_claude_prep_pack():
         "caveats": [
             "Role title inferred from title — verify before the call",
         ],
-    }
+    })
     mock_response.content = [mock_block]
     return mock_response
