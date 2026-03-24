@@ -1,13 +1,19 @@
-"""Send prep pack emails via Gmail with three-layer deduplication."""
+"""Send prep pack emails via Gmail (OAuth) or SMTP fallback."""
 import hashlib
 import json
+import smtplib
 from datetime import datetime
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.models import EmailDeliveryLog, PrepPack, CalendarEvent, EventClassification, User, SyncLog
+from backend.config import get_settings
+from backend.models import EmailDeliveryLog, PrepPack, CalendarEvent, EventClassification, User, OAuthToken, SyncLog
 from backend.services import ggmail
+
+settings = get_settings()
 
 
 def _compute_email_hash(to: str, subject: str, body: str) -> str:
@@ -121,6 +127,22 @@ def _render_plain(pack: PrepPack, event: CalendarEvent) -> str:
     return "\n".join(lines)
 
 
+def _send_via_smtp(to: str, subject: str, html_body: str, plain_body: str) -> str:
+    """Send via SMTP (Gmail App Password). Returns a pseudo message-id."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.smtp_user
+    msg["To"] = to
+    msg.attach(MIMEText(plain_body, "plain"))
+    msg.attach(MIMEText(html_body, "html"))
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as s:
+        s.ehlo()
+        s.starttls()
+        s.login(settings.smtp_user, settings.smtp_pass)
+        s.sendmail(settings.smtp_user, [to], msg.as_string())
+    return f"smtp-{datetime.utcnow().timestamp()}"
+
+
 def send_prep_pack_email(prep_pack_id: int, user_id: int, db: Session) -> dict:
     """Send the prep pack email. Skips if a duplicate is detected.
 
@@ -169,16 +191,24 @@ def send_prep_pack_email(prep_pack_id: int, user_id: int, db: Session) -> dict:
         _log(db, user_id, "email", "success", f"Skipped duplicate email for prep pack {prep_pack_id}")
         return {"status": "skipped_duplicate", "message_id": None}
 
-    # Send the email
+    # Send the email — Gmail OAuth if connected, else SMTP fallback
     try:
-        message_id = ggmail.send_email(
-            user_id=user_id,
-            db=db,
-            to=recipient,
-            subject=subject,
-            html_body=html_body,
-            plain_body=plain_body,
-        )
+        has_oauth = db.query(OAuthToken).filter(
+            OAuthToken.user_id == user_id,
+            OAuthToken.provider == "google",
+        ).first() is not None
+
+        if has_oauth:
+            message_id = ggmail.send_email(
+                user_id=user_id, db=db, to=recipient,
+                subject=subject, html_body=html_body, plain_body=plain_body,
+            )
+        elif settings.smtp_user and settings.smtp_pass:
+            message_id = _send_via_smtp(recipient, subject, html_body, plain_body)
+        else:
+            raise RuntimeError(
+                "No email transport available: user has no Google OAuth and SMTP is not configured."
+            )
         log = EmailDeliveryLog(
             user_id=user_id,
             prep_pack_id=prep_pack_id,

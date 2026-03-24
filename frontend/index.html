@@ -410,7 +410,8 @@
       const [msg, setMsg] = useState(null);
       const [pollingRef, setPollingRef] = useState(null);
       const [apiKey, setApiKey] = useState(() => localStorage.getItem('demo_anthropic_key') || '');
-      const [showKeyInput, setShowKeyInput] = useState(false);
+      const [testerEmail, setTesterEmail] = useState(() => localStorage.getItem('demo_email') || '');
+      const [showOptions, setShowOptions] = useState(false);
 
       const load = useCallback(async () => {
         try {
@@ -443,12 +444,14 @@
         setGenLoading(true); setMsg(null);
         try {
           const headers = apiKey ? { 'X-Anthropic-Key': apiKey } : {};
+          const body = testerEmail ? { email: testerEmail } : null;
           if (pack?.id) {
-            await api.post(`/prep-packs/${pack.id}/regenerate`, null, headers);
+            await api.post(`/prep-packs/${pack.id}/regenerate`, body, headers);
           } else {
-            await api.post(`/prep-packs/generate/${eventId}`, null, headers);
+            await api.post(`/prep-packs/generate/${eventId}`, body, headers);
           }
-          setMsg({ type: 'success', text: 'Generation started. This may take 15-30 seconds.' });
+          const emailNote = testerEmail ? ` We'll email the pack to ${testerEmail}.` : '';
+          setMsg({ type: 'success', text: `Generation started. This may take 15–30 seconds.${emailNote}` });
           setTimeout(load, 5000);
         } catch(e) { setMsg({ type: 'error', text: e.message }); }
         finally { setGenLoading(false); }
@@ -497,25 +500,38 @@
                   <p className="text-xs text-gray-400 mt-2 italic">"{clf.reasoning}"</p>
                 )}
               </div>
-              <div className="flex flex-col gap-2 min-w-[160px]">
+              <div className="flex flex-col gap-2 min-w-[180px]">
                 <button onClick={generate} disabled={genLoading}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
                   {genLoading ? <Spinner/> : '✨'} {pack ? 'Regenerate' : 'Generate Prep Pack'}
                 </button>
-                <button onClick={() => setShowKeyInput(v => !v)}
+                <button onClick={() => setShowOptions(v => !v)}
                   className="text-xs text-gray-400 hover:text-gray-600 text-center py-0.5">
-                  🔑 {apiKey ? 'Using your API key' : 'Use your own API key'}
+                  ⚙️ {testerEmail ? `Email → ${testerEmail.split('@')[0]}@…` : 'Add email to receive pack'}
                 </button>
-                {showKeyInput && (
-                  <div className="mt-1">
-                    <input
-                      type="password"
-                      placeholder="sk-ant-api03-..."
-                      value={apiKey}
-                      onChange={e => { setApiKey(e.target.value); localStorage.setItem('demo_anthropic_key', e.target.value); }}
-                      className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
-                    />
-                    <p className="text-xs text-gray-400 mt-0.5">Stored locally, never sent to server except during generation</p>
+                {showOptions && (
+                  <div className="mt-1 space-y-2">
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium">Your email (receive the pack)</label>
+                      <input
+                        type="email"
+                        placeholder="you@example.com"
+                        value={testerEmail}
+                        onChange={e => { setTesterEmail(e.target.value); localStorage.setItem('demo_email', e.target.value); }}
+                        className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mt-0.5"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-medium">Anthropic API key (optional)</label>
+                      <input
+                        type="password"
+                        placeholder="sk-ant-api03-..."
+                        value={apiKey}
+                        onChange={e => { setApiKey(e.target.value); localStorage.setItem('demo_anthropic_key', e.target.value); }}
+                        className="w-full border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 mt-0.5"
+                      />
+                    </div>
+                    <p className="text-xs text-gray-400">Saved locally in your browser only</p>
                   </div>
                 )}
                 {pack?.generation_status === 'done' && (

@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Claude model
     claude_model: str = "claude-sonnet-4-6"
 
+    # SMTP fallback (used when no Google OAuth — e.g. demo mode)
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    smtp_user: str = ""   # e.g. yourapp@gmail.com
+    smtp_pass: str = ""   # Gmail App Password
+
 
 @lru_cache()
 def get_settings() -> Settings:

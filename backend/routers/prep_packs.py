@@ -3,12 +3,17 @@ import json
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.deps import get_current_user
 from backend.models import CalendarEvent, EventClassification, PrepPack, User
 from backend.schemas import ChecklistItem, EmailLogRead, ExpectedQuestion, PrepPackRead
+
+
+class RegenerateRequest(BaseModel):
+    email: Optional[str] = None
 
 router = APIRouter()
 
@@ -84,6 +89,7 @@ def get_prep_pack(
 def regenerate_prep_pack(
     prep_pack_id: int,
     background_tasks: BackgroundTasks,
+    body: RegenerateRequest = RegenerateRequest(),
     x_anthropic_key: Optional[str] = Header(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -95,6 +101,11 @@ def regenerate_prep_pack(
     if not pack:
         raise HTTPException(status_code=404, detail="Prep pack not found")
 
+    # Update user email if tester provided one
+    if body.email and body.email != current_user.email:
+        current_user.email = body.email
+        db.commit()
+
     pack.generation_status = "pending"
     db.commit()
 
@@ -103,7 +114,7 @@ def regenerate_prep_pack(
     if clf is None:
         raise HTTPException(status_code=422, detail="Event has no classification yet")
 
-    background_tasks.add_task(_regen_and_send, pack.id, event.id, current_user.id, x_anthropic_key)
+    background_tasks.add_task(_regen_and_send, pack.id, event.id, current_user.id, x_anthropic_key, body.email)
 
     return {"message": "Regeneration started", "prep_pack_id": prep_pack_id}
 
@@ -162,12 +173,11 @@ def send_email_now(
     return result
 
 
-def _regen_and_send(pack_id: Optional[int], event_id: int, user_id: int, api_key: Optional[str] = None):
+def _regen_and_send(pack_id: Optional[int], event_id: int, user_id: int, api_key: Optional[str] = None, recipient_email: Optional[str] = None):
     """Background task: generate prep pack then send email."""
     from backend.database import SessionLocal
     from backend.services.prep_generator import generate_prep_pack
     from backend.services.email_sender import send_prep_pack_email
-    from backend.services.classifier import should_auto_generate
 
     db = SessionLocal()
     try:
@@ -175,9 +185,19 @@ def _regen_and_send(pack_id: Optional[int], event_id: int, user_id: int, api_key
         user = db.query(User).filter(User.id == user_id).first()
         clf = event.classification if event else None
 
+        # Persist email override for this session
+        if recipient_email and user and user.email != recipient_email:
+            user.email = recipient_email
+            db.commit()
+
         pack = generate_prep_pack(event, clf, user, db, api_key=api_key)
-        if clf and should_auto_generate(clf):
-            send_prep_pack_email(pack.id, user_id, db)
+
+        # Always send when an explicit email is provided; otherwise only if auto-send applies
+        if recipient_email or (clf and clf.label not in ("not_job_related", "ambiguous")):
+            try:
+                send_prep_pack_email(pack.id, user_id, db)
+            except Exception as mail_err:
+                print(f"[prep_packs] Email send failed (non-fatal): {mail_err}")
     except Exception as e:
         print(f"[prep_packs] Background regen failed: {e}")
     finally:
