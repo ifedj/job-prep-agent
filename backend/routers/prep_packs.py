@@ -2,7 +2,7 @@
 import json
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -84,6 +84,7 @@ def get_prep_pack(
 def regenerate_prep_pack(
     prep_pack_id: int,
     background_tasks: BackgroundTasks,
+    x_anthropic_key: Optional[str] = Header(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -102,8 +103,7 @@ def regenerate_prep_pack(
     if clf is None:
         raise HTTPException(status_code=422, detail="Event has no classification yet")
 
-    from backend.services.prep_generator import generate_prep_pack
-    background_tasks.add_task(_regen_and_send, pack.id, event.id, current_user.id)
+    background_tasks.add_task(_regen_and_send, pack.id, event.id, current_user.id, x_anthropic_key)
 
     return {"message": "Regeneration started", "prep_pack_id": prep_pack_id}
 
@@ -162,7 +162,7 @@ def send_email_now(
     return result
 
 
-def _regen_and_send(pack_id: Optional[int], event_id: int, user_id: int):
+def _regen_and_send(pack_id: Optional[int], event_id: int, user_id: int, api_key: Optional[str] = None):
     """Background task: generate prep pack then send email."""
     from backend.database import SessionLocal
     from backend.services.prep_generator import generate_prep_pack
@@ -175,7 +175,7 @@ def _regen_and_send(pack_id: Optional[int], event_id: int, user_id: int):
         user = db.query(User).filter(User.id == user_id).first()
         clf = event.classification if event else None
 
-        pack = generate_prep_pack(event, clf, user, db)
+        pack = generate_prep_pack(event, clf, user, db, api_key=api_key)
         if clf and should_auto_generate(clf):
             send_prep_pack_email(pack.id, user_id, db)
     except Exception as e:

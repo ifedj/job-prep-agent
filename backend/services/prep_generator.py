@@ -109,6 +109,7 @@ def generate_prep_pack(
     classification: EventClassification,
     user: User,
     db: Session,
+    api_key: Optional[str] = None,
 ) -> PrepPack:
     """Generate (or regenerate) a prep pack for an event. Returns the PrepPack row."""
     # Get or create the prep pack row
@@ -127,7 +128,7 @@ def generate_prep_pack(
     db.commit()
 
     try:
-        client = anthropic.Anthropic(api_key=settings.anthropic_api_key, timeout=60.0)
+        client = anthropic.Anthropic(api_key=api_key or settings.anthropic_api_key, timeout=60.0)
 
         attendees = json.loads(event.attendees or "[]")
         attendee_names_emails = ", ".join(

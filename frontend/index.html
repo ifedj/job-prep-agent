@@ -27,10 +27,10 @@
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
         return r.json();
       },
-      async post(path, body) {
+      async post(path, body, extraHeaders) {
         const r = await fetch(`/api${path}`, {
           method: 'POST', credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', ...extraHeaders },
           body: body ? JSON.stringify(body) : undefined,
         });
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
@@ -409,6 +409,8 @@
       const [emailLogs, setEmailLogs] = useState([]);
       const [msg, setMsg] = useState(null);
       const [pollingRef, setPollingRef] = useState(null);
+      const [apiKey, setApiKey] = useState(() => localStorage.getItem('demo_anthropic_key') || '');
+      const [showKeyInput, setShowKeyInput] = useState(false);
 
       const load = useCallback(async () => {
         try {
@@ -440,7 +442,12 @@
       async function generate() {
         setGenLoading(true); setMsg(null);
         try {
-          await api.post(`/prep-packs/generate/${eventId}`);
+          const headers = apiKey ? { 'X-Anthropic-Key': apiKey } : {};
+          if (pack?.id) {
+            await api.post(`/prep-packs/${pack.id}/regenerate`, null, headers);
+          } else {
+            await api.post(`/prep-packs/generate/${eventId}`, null, headers);
+          }
           setMsg({ type: 'success', text: 'Generation started. This may take 15-30 seconds.' });
           setTimeout(load, 5000);
         } catch(e) { setMsg({ type: 'error', text: e.message }); }
@@ -490,11 +497,27 @@
                   <p className="text-xs text-gray-400 mt-2 italic">"{clf.reasoning}"</p>
                 )}
               </div>
-              <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2 min-w-[160px]">
                 <button onClick={generate} disabled={genLoading}
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
                   {genLoading ? <Spinner/> : '✨'} {pack ? 'Regenerate' : 'Generate Prep Pack'}
                 </button>
+                <button onClick={() => setShowKeyInput(v => !v)}
+                  className="text-xs text-gray-400 hover:text-gray-600 text-center py-0.5">
+                  🔑 {apiKey ? 'Using your API key' : 'Use your own API key'}
+                </button>
+                {showKeyInput && (
+                  <div className="mt-1">
+                    <input
+                      type="password"
+                      placeholder="sk-ant-api03-..."
+                      value={apiKey}
+                      onChange={e => { setApiKey(e.target.value); localStorage.setItem('demo_anthropic_key', e.target.value); }}
+                      className="w-full border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+                    />
+                    <p className="text-xs text-gray-400 mt-0.5">Stored locally, never sent to server except during generation</p>
+                  </div>
+                )}
                 {pack?.generation_status === 'done' && (
                   <button onClick={sendEmail} disabled={emailLoading}
                     className="border border-gray-300 px-4 py-2 rounded-lg text-sm hover:bg-gray-50 flex items-center gap-2 whitespace-nowrap">
