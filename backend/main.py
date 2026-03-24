@@ -7,8 +7,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.database import Base, engine
+from backend.database import Base, SessionLocal, engine
+from backend.models import User
 from backend.routers import auth, events, prep_packs, profile, review, sync
+from backend.security import create_access_token
 from backend.services.scheduler import start_scheduler, stop_scheduler
 
 
@@ -67,6 +69,32 @@ app.mount("/static", StaticFiles(directory="frontend"), name="static")
 @app.get("/", include_in_schema=False)
 def serve_index():
     return FileResponse("frontend/index.html")
+
+
+@app.get("/demo", include_in_schema=False)
+def serve_demo():
+    """Serve the app pre-authenticated as the demo user."""
+    db = SessionLocal()
+    try:
+        user = db.query(User).first()
+        if user is None:
+            user = User(email="demo@jobprepagent.com", name="Demo User")
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        token = create_access_token(user.id)
+    finally:
+        db.close()
+
+    response = FileResponse("frontend/index.html")
+    response.set_cookie(
+        key="session_token",
+        value=token,
+        httponly=True,
+        samesite="lax",
+        max_age=60 * 60 * 24 * 7,
+    )
+    return response
 
 
 @app.get("/health")

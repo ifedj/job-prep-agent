@@ -149,10 +149,13 @@
             {step === 1 && <>
               <h1 className="text-2xl font-bold mb-1">Welcome to Job Prep Agent</h1>
               <p className="text-gray-500 mb-4">Let's set up your profile so we can tailor your prep packs.</p>
-              <a href="/auth/demo"
-                className="block w-full mb-6 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg py-3 font-semibold text-center hover:from-blue-700 hover:to-indigo-700 shadow-sm">
+              <a href="/demo"
+                className="block w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg py-3 font-semibold text-center hover:from-blue-700 hover:to-indigo-700 shadow-sm">
                 ✨ Try Demo — see it in action instantly
               </a>
+              <p className="text-center text-xs text-gray-400 mt-1 mb-5">
+                Shareable link: <span className="font-mono">{window.location.host}/demo</span>
+              </p>
               <div className="flex items-center gap-3 mb-6">
                 <div className="flex-1 h-px bg-gray-200"/>
                 <span className="text-xs text-gray-400 font-medium">or set up your own profile</span>
@@ -847,18 +850,20 @@
       }, []);
 
       useEffect(() => {
+        const isDemo = window.location.pathname === '/demo';
+        if (!isDemo) {
+          // Landing page — always show onboarding regardless of auth state
+          setPage('onboarding');
+          return;
+        }
+        // Demo path — load auth and go straight to dashboard
         (async () => {
           try {
             const status = await fetch('/auth/me', { credentials: 'include' }).then(r => r.json());
             setAuthStatus(status);
             if (status.is_authenticated) {
-              try {
-                const prof = await api.get('/profile');
-                setProfile(prof);
-                setPage('dashboard');
-              } catch {
-                setPage('onboarding');
-              }
+              try { const prof = await api.get('/profile'); setProfile(prof); } catch {}
+              setPage('dashboard');
             } else {
               setPage('onboarding');
             }
