@@ -91,8 +91,8 @@ def _build_user_context(user: User) -> str:
                 exp_lines.append(f"  - {exp.get('role', '')} at {exp.get('company', '')} ({exp.get('start', '')}–{exp.get('end', '')})")
             parts.append("Experience:\n" + "\n".join(exp_lines))
     elif user.resume_raw_text:
-        # Structured data not available — include raw text directly (Claude will parse in context)
-        parts.append(f"Resume (full text):\n{user.resume_raw_text[:3000]}")
+        # Structured data not available — include full raw text (Claude will parse in context)
+        parts.append(f"Resume (full text):\n{user.resume_raw_text[:8000]}")
     return "\n".join(parts) if parts else "No profile data available."
 
 
@@ -155,6 +155,8 @@ Description: {(event.description or 'none')[:500]}
 
 CANDIDATE:
 {_build_user_context(user)}
+
+Important: Mine the CANDIDATE section carefully for specific company names, product names, measurable outcomes (users, accuracy %, revenue, scale), technical stack, and role titles. Reference these specifics explicitly throughout every section — talking points, expected questions, checklist items, and caveats. Never use generic descriptions when specific ones are available from the candidate's background.
 
 Return a JSON object with exactly these keys:
 - "meeting_summary": string (2-3 sentences)

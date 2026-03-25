@@ -429,7 +429,7 @@
     }
 
     // ─── Event Detail / Prep Pack ─────────────────────────────────────────────
-    function EventDetail({ eventId, onBack }) {
+    function EventDetail({ eventId, onBack, authStatus }) {
       const [event, setEvent] = useState(null);
       const [pack, setPack] = useState(null);
       const [loading, setLoading] = useState(true);
@@ -534,11 +534,13 @@
                   className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 whitespace-nowrap">
                   {genLoading ? <Spinner/> : '✨'} {pack ? 'Regenerate' : 'Generate Prep Pack'}
                 </button>
-                <button onClick={() => setShowOptions(v => !v)}
-                  className="text-xs text-gray-400 hover:text-gray-600 text-center py-0.5">
-                  ⚙️ {testerEmail ? `Email → ${testerEmail.split('@')[0]}@…` : 'Add email to receive pack'}
-                </button>
-                {showOptions && (
+                {!authStatus?.google_connected && (
+                  <button onClick={() => setShowOptions(v => !v)}
+                    className="text-xs text-gray-400 hover:text-gray-600 text-center py-0.5">
+                    ⚙️ {testerEmail ? `Email → ${testerEmail.split('@')[0]}@…` : 'Add email to receive pack'}
+                  </button>
+                )}
+                {!authStatus?.google_connected && showOptions && (
                   <div className="mt-1 space-y-2">
                     <div>
                       <label className="text-xs text-gray-500 font-medium">Your email (receive the pack)</label>
@@ -912,7 +914,7 @@
       if (page === 'onboarding') return <Onboarding onComplete={() => setPage('dashboard')}/>;
       if (page === 'review') return <ReviewQueue onBack={() => setPage('dashboard')} onDecide={() => {}} />;
       if (page === 'profile') return <ProfileEditor onBack={() => setPage('dashboard')}/>;
-      if (page === 'event') return <EventDetail eventId={selectedEventId} onBack={() => setPage('dashboard')}/>;
+      if (page === 'event') return <EventDetail eventId={selectedEventId} onBack={() => setPage('dashboard')} authStatus={authStatus}/>;
 
       return <Dashboard user={profile} authStatus={authStatus} onPage={goTo}/>;
     }
