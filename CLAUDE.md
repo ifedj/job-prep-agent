@@ -19,6 +19,13 @@
 Calendar Sync → Classify → Generate → Email
 Each step is a separate concern. Do not merge them.
 
+### Auto-trigger after onboarding
+When `/api/onboarding/complete` is called (after profile + resume + Google connect):
+- If Google connected: triggers full pipeline (sync → classify → generate → email) as BackgroundTask
+- If Google NOT connected (skip or demo): triggers `generate_pending_packs` for any seeded events
+- This means by the time the user sees the dashboard, packs are already generating
+- No manual "Sync Now" required on first visit
+
 ### Resume Handling
 - Resume is parsed (raw text extracted) on upload
 - `structure_resume()` is NOT called on upload (would exceed 10s limit)
@@ -56,3 +63,17 @@ cd backend && uvicorn main:app --reload   # local dev
 ## Before Every Deploy
 - Verify: lazy engine init not broken by new imports in main.py
 - Check: no new blocking calls added to request handlers
+
+## Bugs Fixed (commit to memory)
+- `POST /api/profile` — NEVER use `response: Response = None` injection on Vercel. Use `JSONResponse` directly and call `resp.set_cookie()` on it. FastAPI's Response injection silently fails on Vercel serverless.
+- `email_sender.py` — After email sends successfully, wrap the DB logging in try/except. Never let a DB write failure after a successful send bubble up as a 500 to the frontend.
+- Cookie conflicts — Users with stale HttpOnly cookies from previous sessions may get stuck. Frontend now shows a clear error message telling users to clear cookies or use incognito.
+
+## Demo Architecture
+- Demo seeds ONLY calendar events + classifications — NO static prep pack content
+- Prep packs are generated via the REAL Claude API pipeline (same as real users)
+- Demo user has `resume_raw_text` set to a full resume (`_DEMO_RESUME_TEXT` in main.py)
+- `serve_demo()` triggers `generate_pending_packs()` as a BackgroundTask on every visit
+- `generate_pending_packs()` is idempotent — skips "done"/"generating", retries "failed"
+- On first visit: user sees events with packs generating; they appear as packs complete
+- The demo user profile: Ife Dare-Johnson, Product Manager, HealthTracka (50K users), Lola AI (RAG, 95% accuracy), MIT Sloan MBA
