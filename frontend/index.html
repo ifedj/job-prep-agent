@@ -103,14 +103,24 @@
       const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
       async function submitProfile() {
+        // Read values directly from DOM — Safari autofill may bypass React onChange
+        const allInputs = document.querySelectorAll('input:not([type=file]):not([type=hidden]), textarea');
+        const domVals = Array.from(allInputs).map(el => el.value);
+        // domVals order: name, email, target_roles, background_summary, key_projects
+        const safeName   = form.name   || domVals[0] || '';
+        const safeEmail  = form.email  || domVals[1] || '';
+        const safeRoles  = form.target_roles  || domVals[2] || '';
+        const safeBg     = form.background_summary || domVals[3] || '';
+        const safeProj   = form.key_projects  || domVals[4] || '';
+        if (!safeEmail) { setError('Email address is required.'); return; }
         setLoading(true); setError('');
         try {
-          const roles = form.target_roles.split(',').map(r => r.trim()).filter(Boolean);
-          const projects = form.key_projects.split(',').map(p => p.trim()).filter(Boolean);
+          const roles = safeRoles.split(',').map(r => r.trim()).filter(Boolean);
+          const projects = safeProj.split(',').map(p => p.trim()).filter(Boolean);
           await api.post('/profile', {
-            name: form.name, email: form.email,
+            name: safeName, email: safeEmail,
             target_roles: roles,
-            background_summary: form.background_summary,
+            background_summary: safeBg,
             key_projects: projects,
           });
           setStep(2);
@@ -179,7 +189,7 @@
                 <div>
                   <label className="block text-sm font-medium mb-1">Email address</label>
                   <input type="email" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    value={form.email} onChange={e => set('email', e.target.value)} placeholder="jane@example.com"/>
+                    value={form.email} onChange={e => set('email', e.target.value)} onBlur={e => set('email', e.target.value)} placeholder="jane@example.com"/>
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">Target roles <span className="text-gray-400">(comma-separated)</span></label>
@@ -201,7 +211,7 @@
                 </div>
               </div>
               {error && <div className="mt-3"><Alert msg={error} onClose={() => setError('')}/></div>}
-              <button onClick={submitProfile} disabled={loading || !form.email}
+              <button onClick={submitProfile} disabled={loading}
                 className="mt-6 w-full bg-blue-600 text-white rounded-lg py-2.5 font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
                 {loading ? <Spinner/> : null} Continue →
               </button>
