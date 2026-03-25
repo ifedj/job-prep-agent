@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.database import Base, SessionLocal, engine
+from backend.database import Base, SessionLocal, create_tables, get_engine
 from backend.models import CalendarEvent, EventClassification, PrepPack, User
 from backend.routers import auth, events, prep_packs, profile, review, sync
 from backend.security import create_access_token
@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     # Create all database tables — wrapped so a slow cold-start DB connection
     # doesn't crash the entire function before it can serve any request
     try:
-        Base.metadata.create_all(bind=engine)
+        create_tables()
     except Exception as exc:
         print(f"[startup] DB schema creation failed (will retry on first request): {exc}")
     # Scheduler doesn't run in serverless environments
@@ -237,7 +237,7 @@ def serve_demo():
 @app.get("/health")
 def health():
     try:
-        Base.metadata.create_all(bind=engine)
+        create_tables()
         db = SessionLocal()
         db.execute(__import__("sqlalchemy").text("SELECT 1"))
         db.close()
