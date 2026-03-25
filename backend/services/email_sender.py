@@ -192,12 +192,13 @@ def send_prep_pack_email(prep_pack_id: int, user_id: int, db: Session) -> dict:
         return {"status": "skipped_duplicate", "message_id": None}
 
     # Send the email — Gmail OAuth if connected, else SMTP fallback
-    try:
-        has_oauth = db.query(OAuthToken).filter(
-            OAuthToken.user_id == user_id,
-            OAuthToken.provider == "google",
-        ).first() is not None
+    has_oauth = db.query(OAuthToken).filter(
+        OAuthToken.user_id == user_id,
+        OAuthToken.provider == "google",
+    ).first() is not None
 
+    message_id = None
+    try:
         if has_oauth:
             message_id = ggmail.send_email(
                 user_id=user_id, db=db, to=recipient,
@@ -209,35 +210,34 @@ def send_prep_pack_email(prep_pack_id: int, user_id: int, db: Session) -> dict:
             raise RuntimeError(
                 "No email transport available: user has no Google OAuth and SMTP is not configured."
             )
-        log = EmailDeliveryLog(
-            user_id=user_id,
-            prep_pack_id=prep_pack_id,
-            recipient_email=recipient,
-            subject=subject,
-            content_hash=content_hash,
-            gmail_message_id=message_id,
-            status="sent",
-            sent_at=datetime.utcnow(),
-        )
-        db.add(log)
+    except Exception as e:
+        if message_id is None:  # Email was never sent — log and surface the error
+            try:
+                db.add(EmailDeliveryLog(
+                    user_id=user_id, prep_pack_id=prep_pack_id,
+                    recipient_email=recipient, subject=subject,
+                    content_hash=content_hash + f"_fail_{datetime.utcnow().timestamp()}",
+                    status="failed", error_message=str(e),
+                ))
+                db.commit()
+            except Exception:
+                pass
+            raise
+
+    # Email was sent — log best-effort, never let a DB hiccup surface as a UI error
+    try:
+        db.add(EmailDeliveryLog(
+            user_id=user_id, prep_pack_id=prep_pack_id,
+            recipient_email=recipient, subject=subject,
+            content_hash=content_hash, gmail_message_id=message_id,
+            status="sent", sent_at=datetime.utcnow(),
+        ))
         db.commit()
         _log(db, user_id, "email", "success", f"Sent prep pack email for event '{event.title}' to {recipient}")
-        return {"status": "sent", "message_id": message_id}
+    except Exception:
+        pass
 
-    except Exception as e:
-        log = EmailDeliveryLog(
-            user_id=user_id,
-            prep_pack_id=prep_pack_id,
-            recipient_email=recipient,
-            subject=subject,
-            content_hash=content_hash + f"_fail_{datetime.utcnow().timestamp()}",
-            status="failed",
-            error_message=str(e),
-        )
-        db.add(log)
-        db.commit()
-        _log(db, user_id, "email", "failed", f"Failed to send for event '{event.title}': {e}")
-        raise
+    return {"status": "sent", "message_id": message_id}
 
 
 def _log(db: Session, user_id: int, sync_type: str, status: str, details: str):
