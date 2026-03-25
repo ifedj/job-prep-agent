@@ -208,6 +208,9 @@
             </>}
 
             {step === 2 && <>
+              <button onClick={() => setStep(1)} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-4">
+                ← Back
+              </button>
               <h1 className="text-2xl font-bold mb-1">Upload your resume</h1>
               <p className="text-gray-500 mb-6">We'll extract your experience to personalize prep packs. Optional but recommended.</p>
               <label className="block border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-400 transition-colors">
@@ -230,6 +233,9 @@
             </>}
 
             {step === 3 && <>
+              <button onClick={() => setStep(2)} className="flex items-center gap-1 text-sm text-gray-400 hover:text-gray-600 mb-4">
+                ← Back
+              </button>
               <h1 className="text-2xl font-bold mb-1">Connect Google</h1>
               <p className="text-gray-500 mb-6">Connect your Google account to sync Calendar and Gmail for meeting context.</p>
               <div className="bg-blue-50 rounded-xl p-4 mb-6 text-sm text-blue-800 space-y-1">
