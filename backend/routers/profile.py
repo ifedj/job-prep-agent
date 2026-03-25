@@ -3,7 +3,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -37,15 +38,14 @@ def get_profile(current_user: User = Depends(get_current_user)):
     return _serialize_user(current_user)
 
 
-@router.post("", response_model=ProfileRead)
+@router.post("")
 def create_or_update_profile(
     body: ProfileUpdate,
     session_token: Optional[str] = Cookie(default=None),
     db: Session = Depends(get_db),
-    response: Response = None,
 ):
     """Create profile if none exists, or update existing. Returns session cookie."""
-    # Try to find existing user by email
+    # Try to find existing user by session token
     user = None
     if session_token:
         from backend.security import decode_access_token
@@ -80,12 +80,16 @@ def create_or_update_profile(
     db.commit()
     db.refresh(user)
 
-    result = _serialize_user(user)
+    data = _serialize_user(user)
+
+    # Build response directly — avoids relying on FastAPI Response injection
+    # which can fail silently on Vercel serverless
+    resp = JSONResponse(content=data.model_dump(mode="json"))
 
     # Issue session cookie if not already authenticated
     if not session_token:
         token = create_access_token(user.id)
-        response.set_cookie(
+        resp.set_cookie(
             key="session_token",
             value=token,
             httponly=True,
@@ -93,7 +97,7 @@ def create_or_update_profile(
             max_age=60 * 60 * 24 * 7,
         )
 
-    return result
+    return resp
 
 
 @router.patch("", response_model=ProfileRead)
