@@ -264,7 +264,10 @@
                 </svg>
                 Connect with Google
               </button>
-              <button onClick={() => onComplete()} className="mt-3 w-full text-gray-400 text-sm hover:text-gray-600 py-2">
+              <button onClick={async () => {
+                try { await api.post('/onboarding/complete', {}); } catch {}
+                onComplete();
+              }} className="mt-3 w-full text-gray-400 text-sm hover:text-gray-600 py-2">
                 Skip for now (limited functionality)
               </button>
             </>}
@@ -890,6 +893,8 @@
             setAuthStatus(status);
             if (status.is_authenticated) {
               try { const prof = await api.get('/profile'); setProfile(prof); } catch {}
+              // Seed demo prep packs and send welcome emails (idempotent — safe every visit)
+              try { await api.post('/onboarding/complete', {}); } catch {}
               setPage('dashboard');
             } else {
               setPage('onboarding');

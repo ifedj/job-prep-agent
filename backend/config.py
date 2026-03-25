@@ -61,10 +61,16 @@ class Settings(BaseSettings):
     # SMTP fallback (used when no Google OAuth — e.g. demo mode)
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
-    smtp_user: str = ""   # e.g. yourapp@gmail.com
-    smtp_pass: str = ""   # Gmail App Password
+    smtp_user: str = ""   # e.g. yourapp@gmail.com  (or set GMAIL_ADDRESS)
+    smtp_pass: str = ""   # Gmail App Password      (or set GMAIL_APP_PASSWORD)
 
 
 @lru_cache()
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    # Accept GMAIL_ADDRESS / GMAIL_APP_PASSWORD as aliases for smtp_user / smtp_pass
+    if not s.smtp_user:
+        object.__setattr__(s, "smtp_user", os.environ.get("GMAIL_ADDRESS", ""))
+    if not s.smtp_pass:
+        object.__setattr__(s, "smtp_pass", os.environ.get("GMAIL_APP_PASSWORD", ""))
+    return s

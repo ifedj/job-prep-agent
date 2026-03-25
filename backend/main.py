@@ -4,12 +4,13 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.orm import Session
 
-from backend.database import Base, SessionLocal, create_tables, get_engine
+from backend.database import Base, SessionLocal, create_tables, get_db, get_engine
 from backend.models import CalendarEvent, EventClassification, PrepPack, User
 from backend.routers import auth, events, prep_packs, profile, review, sync
 from backend.security import create_access_token
@@ -238,6 +239,51 @@ def serve_demo():
         max_age=60 * 60 * 24 * 7,
     )
     return response
+
+
+@app.post("/api/onboarding/complete", include_in_schema=False)
+def onboarding_complete(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """Called after a user completes onboarding. Seeds demo data and sends welcome emails."""
+    from typing import Optional as _Opt
+    from backend.security import decode_access_token
+    from backend.services.email_sender import send_prep_pack_email
+
+    session_token: _Opt[str] = request.cookies.get("session_token")
+    if not session_token:
+        return {"status": "unauthenticated"}
+
+    user_id = decode_access_token(session_token)
+    if not user_id:
+        return {"status": "unauthenticated"}
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return {"status": "user_not_found"}
+
+    # Seed the 3 demo prep packs (no-op if events already exist)
+    _seed_demo_data(db, user)
+
+    # Send emails for every ready prep pack (dedup prevents re-sending)
+    packs = db.query(PrepPack).filter(
+        PrepPack.user_id == user_id,
+        PrepPack.generation_status == "done",
+    ).all()
+
+    sent, skipped, failed = 0, 0, []
+    for pack in packs:
+        try:
+            result = send_prep_pack_email(pack.id, user_id, db)
+            if result.get("status") == "sent":
+                sent += 1
+            else:
+                skipped += 1
+        except Exception as e:
+            failed.append(str(e))
+
+    return {"status": "ok", "emails_sent": sent, "emails_skipped": skipped, "errors": failed}
 
 
 @app.get("/health")
