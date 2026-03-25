@@ -61,6 +61,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# Surface real tracebacks on Vercel instead of blank "Internal Server Error"
+if _is_serverless:
+    import traceback as _tb
+    from starlette.requests import Request as _Req
+    from starlette.responses import JSONResponse as _JR
+
+    @app.exception_handler(Exception)
+    async def _debug_exc(_req: _Req, exc: Exception):
+        return _JR(
+            status_code=500,
+            content={"detail": str(exc), "traceback": _tb.format_exc()},
+        )
+
 # API routers
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
