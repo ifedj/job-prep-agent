@@ -21,8 +21,12 @@ _is_serverless = bool(os.environ.get("IS_VERCEL") or os.environ.get("AWS_LAMBDA_
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all database tables
-    Base.metadata.create_all(bind=engine)
+    # Create all database tables — wrapped so a slow cold-start DB connection
+    # doesn't crash the entire function before it can serve any request
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:
+        print(f"[startup] DB schema creation failed (will retry on first request): {exc}")
     # Scheduler doesn't run in serverless environments
     if not _is_serverless:
         start_scheduler()
@@ -232,4 +236,11 @@ def serve_demo():
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    try:
+        Base.metadata.create_all(bind=engine)
+        db = SessionLocal()
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        db.close()
+        return {"status": "ok", "db": "connected"}
+    except Exception as exc:
+        return {"status": "degraded", "db": str(exc)}
