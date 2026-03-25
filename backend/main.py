@@ -77,6 +77,12 @@ def serve_index():
     return FileResponse("frontend/index.html")
 
 
+@app.get("/dashboard", include_in_schema=False)
+def serve_dashboard():
+    """Serve the app at /dashboard — used after Google OAuth callback."""
+    return FileResponse("frontend/index.html")
+
+
 def _seed_demo_data(db, user):
     """Seed 3 demo events + prep packs if none exist yet."""
     if db.query(CalendarEvent).filter(CalendarEvent.user_id == user.id).count() > 0:

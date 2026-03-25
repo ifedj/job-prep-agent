@@ -81,7 +81,7 @@ def google_callback(
     save_tokens(user.id, credentials, db)
 
     token = create_access_token(user.id)
-    response = RedirectResponse(url="/")
+    response = RedirectResponse(url="/dashboard")
     response.set_cookie(
         key="session_token",
         value=token,

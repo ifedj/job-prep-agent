@@ -865,13 +865,15 @@
       }, []);
 
       useEffect(() => {
-        const isDemo = window.location.pathname === '/demo';
-        if (!isDemo) {
+        const path = window.location.pathname;
+        const isDemo = path === '/demo';
+        const isDashboard = path === '/dashboard';
+        if (!isDemo && !isDashboard) {
           // Landing page — always show onboarding regardless of auth state
           setPage('onboarding');
           return;
         }
-        // Demo path — load auth and go straight to dashboard
+        // Demo or post-OAuth dashboard path — load auth and go straight to dashboard
         (async () => {
           try {
             const status = await fetch('/auth/me', { credentials: 'include' }).then(r => r.json());
