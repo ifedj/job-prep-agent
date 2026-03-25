@@ -124,21 +124,19 @@
           if (resumeFile) {
             const fd = new FormData();
             fd.append('file', resumeFile);
-            // Race against an 8-second timeout — serverless cold starts can hang indefinitely
+            // 25s timeout — Vercel cold start + pdfplumber can take 10-15s
             const timeout = new Promise((_, rej) =>
-              setTimeout(() => rej(new Error('timed out')), 8000)
+              setTimeout(() => rej(new Error('Upload timed out — the server took too long. You can upload your resume from your profile later.')), 25000)
             );
-            try {
-              await Promise.race([api.upload('/profile/resume', fd), timeout]);
-            } catch (uploadErr) {
-              // Upload failed or timed out — warn and continue, resume can be added later
-              console.warn('Resume upload skipped:', uploadErr.message);
-              setError('Resume upload skipped — you can add it from your profile later.');
-              await new Promise(r => setTimeout(r, 1500));
-            }
+            await Promise.race([api.upload('/profile/resume', fd), timeout]);
           }
           setStep(3);
-        } catch (e) { setError(e.message); }
+        } catch (e) {
+          setError(e.message);
+          // Still move on after showing the error — don't block the flow
+          await new Promise(r => setTimeout(r, 2500));
+          setStep(3);
+        }
         finally { setLoading(false); }
       }
 
@@ -226,7 +224,7 @@
                 </button>
                 <button onClick={submitResume} disabled={loading}
                   className="flex-1 bg-blue-600 text-white rounded-lg py-2.5 font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2">
-                  {loading ? <Spinner/> : null} {resumeFile ? 'Upload & Continue' : 'Continue'} →
+                  {loading ? <Spinner/> : null} {loading && resumeFile ? 'Uploading…' : resumeFile ? 'Upload & Continue' : 'Continue'} {!loading && '→'}
                 </button>
               </div>
             </>}
