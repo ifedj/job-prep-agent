@@ -286,6 +286,29 @@ def onboarding_complete(
     return {"status": "ok", "emails_sent": sent, "emails_skipped": skipped, "errors": failed}
 
 
+@app.get("/debug/test-profile", include_in_schema=False)
+def debug_test_profile():
+    """Temporary debug endpoint — remove after fixing profile 500."""
+    import traceback
+    db = SessionLocal()
+    try:
+        create_tables()
+        user = db.query(User).filter(User.email == "debug-test@example.com").first()
+        if not user:
+            user = User(email="debug-test@example.com")
+            db.add(user)
+            db.flush()
+        user.name = "Debug Test"
+        user.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(user)
+        return {"status": "ok", "user_id": user.id, "email": user.email}
+    except Exception:
+        return {"status": "error", "traceback": traceback.format_exc()}
+    finally:
+        db.close()
+
+
 @app.get("/health")
 def health():
     try:
