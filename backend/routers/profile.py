@@ -11,7 +11,7 @@ from backend.deps import get_current_user, get_optional_user
 from backend.models import User
 from backend.schemas import ProfileRead, ProfileUpdate
 from backend.security import create_access_token
-from backend.services.resume_parser import extract_text_from_pdf, structure_resume
+from backend.services.resume_parser import extract_text_from_pdf
 
 router = APIRouter()
 
@@ -138,10 +138,11 @@ async def upload_resume(
     if not raw_text.strip():
         raise HTTPException(status_code=422, detail="Could not extract text from the PDF")
 
-    structured = structure_resume(raw_text)
-
+    # Store raw text immediately — structuring via Claude happens lazily
+    # inside prep_generator when building the first prep pack, keeping
+    # this upload endpoint well within Vercel's 10s function timeout.
     current_user.resume_raw_text = raw_text
-    current_user.resume_structured = json.dumps(structured)
+    current_user.resume_structured = None  # cleared so generator re-structures on next run
     current_user.resume_filename = file.filename
     current_user.updated_at = datetime.utcnow()
     db.commit()

@@ -90,6 +90,9 @@ def _build_user_context(user: User) -> str:
             for exp in structured["experience"][:3]:
                 exp_lines.append(f"  - {exp.get('role', '')} at {exp.get('company', '')} ({exp.get('start', '')}–{exp.get('end', '')})")
             parts.append("Experience:\n" + "\n".join(exp_lines))
+    elif user.resume_raw_text:
+        # Structured data not available — include raw text directly (Claude will parse in context)
+        parts.append(f"Resume (full text):\n{user.resume_raw_text[:3000]}")
     return "\n".join(parts) if parts else "No profile data available."
 
 
