@@ -79,6 +79,7 @@ class EventRead(BaseModel):
     classification: Optional[ClassificationRead]
     has_prep_pack: bool
     prep_pack_status: Optional[str]
+    prep_pack_id: Optional[int] = None
 
     class Config:
         from_attributes = True

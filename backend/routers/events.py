@@ -40,8 +40,10 @@ def _serialize_event(event: CalendarEvent) -> EventRead:
         )
 
     pack_status = None
+    pack_id = None
     if event.prep_pack:
         pack_status = event.prep_pack.generation_status
+        pack_id = event.prep_pack.id
 
     return EventRead(
         id=event.id,
@@ -58,6 +60,7 @@ def _serialize_event(event: CalendarEvent) -> EventRead:
         classification=clf,
         has_prep_pack=event.prep_pack is not None,
         prep_pack_status=pack_status,
+        prep_pack_id=pack_id,
     )
 
 

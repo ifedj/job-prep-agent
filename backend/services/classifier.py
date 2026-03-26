@@ -130,6 +130,16 @@ Classify this event."""
     confidence = float(result.get("confidence", 0.5))
     confidence = max(0.0, min(1.0, confidence))
 
+    # role_title must be filled for any job-related event so prep pack generation
+    # always has a role to work with. If the LLM couldn't extract one from the event,
+    # fall back to the user's primary target role.
+    raw_role = result.get("role_title", "")
+    _PLACEHOLDERS = {"<unknown>", "<none>", "<n/a>", "unknown", "n/a", "none", "not specified", ""}
+    if not raw_role or raw_role.strip("<>").lower() in _PLACEHOLDERS:
+        raw_role = None
+    if raw_role is None and label in {"interview", "recruiter_screen", "networking", "company_intro"}:
+        raw_role = user_target_roles[0] if user_target_roles else None
+
     # Persist or update classification
     classification = db.query(EventClassification).filter(
         EventClassification.event_id == event.id
@@ -140,7 +150,7 @@ Classify this event."""
         classification.confidence = confidence
         classification.reasoning = result.get("reasoning", "")
         classification.company_name = result.get("company_name")
-        classification.role_title = result.get("role_title")
+        classification.role_title = raw_role
         classification.classified_at = datetime.utcnow()
         classification.model_version = settings.claude_model
     else:
@@ -150,7 +160,7 @@ Classify this event."""
             confidence=confidence,
             reasoning=result.get("reasoning", ""),
             company_name=result.get("company_name"),
-            role_title=result.get("role_title"),
+            role_title=raw_role,
             model_version=settings.claude_model,
         )
         db.add(classification)

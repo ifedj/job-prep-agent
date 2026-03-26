@@ -38,17 +38,16 @@ CLIENT_CONFIG = {
 _flow_store: dict[str, Flow] = {}
 
 
-def get_authorization_url() -> tuple[str, str]:
-    """Returns (authorization_url, state)."""
+def get_authorization_url(state: Optional[str] = None) -> tuple[str, str]:
+    """Returns (authorization_url, state). Accepts an external signed state for CSRF protection."""
     flow = Flow.from_client_config(CLIENT_CONFIG, scopes=SCOPES)
     flow.redirect_uri = settings.google_redirect_uri
-    url, state = flow.authorization_url(
-        access_type="offline",
-        prompt="consent",
-        include_granted_scopes="true",
-    )
-    _flow_store[state] = flow
-    return url, state
+    kwargs = dict(access_type="offline", prompt="consent", include_granted_scopes="true")
+    if state:
+        kwargs["state"] = state
+    url, echoed_state = flow.authorization_url(**kwargs)
+    _flow_store[echoed_state] = flow
+    return url, echoed_state
 
 
 def exchange_code(code: str, state: str) -> Credentials:

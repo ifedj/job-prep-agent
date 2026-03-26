@@ -56,7 +56,13 @@ class Settings(BaseSettings):
     classification_ambiguous_lower: float = 0.65
 
     # Claude model
-    claude_model: str = "claude-sonnet-4-6"
+    claude_model: str = "claude-haiku-4-5-20251001"
+    # Max tokens for prep pack generation. 4000 produces full-quality packs (~3k output tokens).
+    # If Vercel timeouts increase, lower to 3000 first before touching 2500.
+    max_tokens: int = 4000
+
+    # Set DEBUG=true to surface full tracebacks in error responses (never in production)
+    debug: bool = False
 
     # SMTP fallback (used when no Google OAuth — e.g. demo mode)
     smtp_host: str = "smtp.gmail.com"

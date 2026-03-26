@@ -107,6 +107,21 @@ def _compute_hash(pack: dict) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
+def _parse_json_safe(raw: str) -> dict:
+    """Parse JSON from Claude output with fallback for literal newlines inside string values.
+
+    Claude sometimes puts unescaped newlines inside JSON strings (e.g. in long suggested
+    answers), which makes json.loads fail with 'Expecting delimiter'. Collapsing all
+    newlines to spaces and retrying handles 99% of these cases.
+    """
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Collapse literal newlines to spaces and retry
+        collapsed = " ".join(line.strip() for line in raw.splitlines())
+        return json.loads(collapsed)
+
+
 def generate_prep_pack(
     event: CalendarEvent,
     classification: EventClassification,
@@ -131,7 +146,11 @@ def generate_prep_pack(
     db.commit()
 
     try:
-        client = anthropic.Anthropic(api_key=api_key or settings.anthropic_api_key, timeout=60.0)
+        client = anthropic.Anthropic(
+            api_key=api_key or settings.anthropic_api_key,
+            timeout=180.0,
+            max_retries=0,
+        )
 
         attendees = json.loads(event.attendees or "[]")
         attendee_names_emails = ", ".join(
@@ -142,35 +161,63 @@ def generate_prep_pack(
 
         effective_label = classification.user_override or classification.label
 
-        user_message = f"""You are a professional interview coach. Generate a meeting prep pack as valid JSON only — no markdown, no explanation, just the JSON object.
+        user_message = f"""You are a senior career coach writing a prep pack for a candidate about to have a specific job-related meeting. Your output will be read by that candidate minutes before the call — it must be specific, strategic, and immediately actionable.
 
-MEETING:
+QUALITY BAR: Every section must reference real details from this candidate's actual background — their real company names, real project names, real metrics, real timelines, real titles. If any sentence could be copy-pasted into a prep pack for a different candidate without changing a word, rewrite it until it cannot. Generic prep is useless and embarrassing.
+
+━━━ MEETING ━━━
 Title: {event.title}
 Type: {effective_label.replace('_', ' ').title()}
-Company: {classification.company_name or 'unknown'}
-Role: {classification.role_title or 'unknown'}
-Date: {event.start_time.strftime('%A, %B %d %Y')}
+Company: {classification.company_name or 'Unknown'}
+Listed Role: {classification.role_title or 'Unknown'}
+Date: {event.start_time.strftime('%A, %B %d %Y at %I:%M %p UTC')}
 Attendees: {attendee_names_emails or 'not listed'}
 Description: {(event.description or 'none')[:500]}
 
-CANDIDATE:
+━━━ CANDIDATE ━━━
 {_build_user_context(user)}
 
-Important: Mine the CANDIDATE section carefully for specific company names, product names, measurable outcomes (users, accuracy %, revenue, scale), technical stack, and role titles. Reference these specifics explicitly throughout every section — talking points, expected questions, checklist items, and caveats. Never use generic descriptions when specific ones are available from the candidate's background.
+━━━ ROLE MISMATCH ANALYSIS ━━━
+Compare the candidate's target roles (above) against the Listed Role for this meeting. If they differ, the prep pack MUST address this head-on — the meeting_summary must name the mismatch and state the strategic goal, and the talking_points must include specific language for redirecting the conversation. Do not ignore mismatches or pretend they don't exist.
 
-Return a JSON object with exactly these keys:
-- "meeting_summary": string (2-3 sentences)
-- "talking_points": array of 4-5 strings
-- "expected_questions": array of 4-5 objects with "question" and "suggested_answer"
-- "questions_to_ask": array of 4-5 strings
-- "prep_checklist": array of exactly 8 strings
-- "caveats": array of 1-3 strings
+━━━ SECTION-BY-SECTION INSTRUCTIONS ━━━
+
+meeting_summary (2–3 sentences):
+State what this meeting is, who it is with, and the strategic goal. If there is a role mismatch, name it explicitly in one sentence.
+
+talking_points (3–4 items, each 2–3 sentences):
+Write actual coaching content in second person. Reference real resume details by name — project names, metrics, companies. Tell the candidate what to lead with and why.
+
+expected_questions (5–6 items):
+Each item needs two fields:
+  - "question": the likely question verbatim
+  - "suggested_answer": 2–3 sentences of coaching — which specific project or metric to reference and how to frame it.
+
+questions_to_ask (4 items, 1 sentence each):
+Sharp, specific questions that signal the candidate did their homework and is thinking strategically about fit.
+
+prep_checklist (6 items, 1–2 sentences each):
+Specific actionable tasks for before the call — research, practice, logistics. Tailored to this meeting and this candidate.
+
+caveats (3 items, 1–2 sentences each):
+Honest flags about unknowns or assumptions the candidate must verify before the call.
+
+━━━ OUTPUT FORMAT ━━━
+Return ONLY a valid JSON object. No markdown code fences. No explanation before or after. No preamble. Start with {{ and end with }}.
+
+Required keys:
+- "meeting_summary": string
+- "talking_points": array of strings (3–4 items)
+- "expected_questions": array of objects with "question" (string) and "suggested_answer" (string) — 5–6 items
+- "questions_to_ask": array of strings (4 items)
+- "prep_checklist": array of strings (6 items)
+- "caveats": array of strings (3 items)
 
 JSON:"""
 
         response = client.messages.create(
             model=settings.claude_model,
-            max_tokens=2500,
+            max_tokens=settings.max_tokens,
             messages=[{"role": "user", "content": user_message}],
         )
 
@@ -183,16 +230,7 @@ JSON:"""
             raw = raw.split("```")[0]
         raw = raw.strip()
 
-        # If JSON is truncated, close it so it parses
-        try:
-            result = json.loads(raw)
-        except json.JSONDecodeError:
-            # Count unclosed braces/brackets and close them
-            open_braces = raw.count("{") - raw.count("}")
-            open_brackets = raw.count("[") - raw.count("]")
-            raw = raw.rstrip(",").rstrip()
-            raw += "]" * open_brackets + "}" * open_braces
-            result = json.loads(raw)
+        result = _parse_json_safe(raw)
         new_hash = _compute_hash(result)
 
         # Detect if content actually changed (for dedup)
@@ -202,8 +240,9 @@ JSON:"""
         pack.talking_points = json.dumps(result.get("talking_points", []))
         pack.expected_questions = json.dumps(result.get("expected_questions", []))
         pack.questions_to_ask = json.dumps(result.get("questions_to_ask", []))
+        raw_checklist = result.get("prep_checklist", [])
         pack.prep_checklist = json.dumps(
-            [{"item": i, "done": False} for i in result.get("prep_checklist", [])]
+            [i["item"] if isinstance(i, dict) else i for i in raw_checklist]
         )
         pack.caveats = json.dumps(result.get("caveats", []))
         pack.generation_status = "done"

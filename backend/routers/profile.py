@@ -47,11 +47,29 @@ def create_or_update_profile(
     """Create profile if none exists, or update existing. Returns session cookie."""
     # Try to find existing user by session token
     user = None
+    session_user_id = None
     if session_token:
         from backend.security import decode_access_token
         uid = decode_access_token(session_token)
         if uid:
             user = db.query(User).filter(User.id == uid).first()
+            session_user_id = user.id if user else None
+
+    # If the session email differs from the submitted email, resolve the target account:
+    # - Case A: submitted email matches an existing account → switch to that account
+    # - Case B: submitted email is new (no matching account) → create a fresh user.
+    #   We deliberately do NOT rename the session user because POST /profile is the
+    #   onboarding entry-point. Entering a different email means "this is a new person",
+    #   not "I want to rename my existing account" (that's PATCH /profile).
+    #   This also protects the demo account from being hijacked by a real user's session.
+    if user is not None and body.email and body.email != user.email:
+        email_user = db.query(User).filter(User.email == body.email).first()
+        if email_user is not None:
+            # Existing account with this email — switch to it
+            user = email_user
+        else:
+            # No account with this email — create a fresh one, don't rename session user
+            user = None
 
     if user is None and body.email:
         user = db.query(User).filter(User.email == body.email).first()
@@ -65,8 +83,6 @@ def create_or_update_profile(
 
     if body.name is not None:
         user.name = body.name
-    if body.email is not None:
-        user.email = body.email
     if body.target_roles is not None:
         user.target_roles = json.dumps(body.target_roles)
     if body.background_summary is not None:
@@ -86,8 +102,12 @@ def create_or_update_profile(
     # which can fail silently on Vercel serverless
     resp = JSONResponse(content=data.model_dump(mode="json"))
 
-    # Issue session cookie if not already authenticated
-    if not session_token:
+    # Issue (or re-issue) session cookie whenever:
+    # 1. No existing session (new user), OR
+    # 2. Active user differs from the session user (account switch — e.g. real email
+    #    entered while stale demo/test cookie exists). Without re-issuing, the cookie
+    #    still points to the old account so Google sync and prep gen run with no profile.
+    if not session_token or user.id != session_user_id:
         token = create_access_token(user.id)
         resp.set_cookie(
             key="session_token",

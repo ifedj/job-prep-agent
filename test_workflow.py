@@ -16,11 +16,11 @@ from datetime import datetime, timedelta
 # Ensure imports resolve from project root
 sys.path.insert(0, os.path.dirname(__file__))
 
-from backend.database import Base, engine, SessionLocal
+from backend.database import Base, get_engine, SessionLocal
 from backend.models import CalendarEvent, EventClassification, PrepPack, User, OAuthToken
 
 # ── Bootstrap DB ──────────────────────────────────────────────────────────────
-Base.metadata.create_all(bind=engine)
+Base.metadata.create_all(bind=get_engine())
 db = SessionLocal()
 
 # ── 1. Find or create a test user ─────────────────────────────────────────────

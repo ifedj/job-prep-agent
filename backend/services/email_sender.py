@@ -143,8 +143,16 @@ def _send_via_smtp(to: str, subject: str, html_body: str, plain_body: str) -> st
     return f"smtp-{datetime.utcnow().timestamp()}"
 
 
-def send_prep_pack_email(prep_pack_id: int, user_id: int, db: Session) -> dict:
+def send_prep_pack_email(
+    prep_pack_id: int,
+    user_id: int,
+    db: Session,
+    recipient_email: Optional[str] = None,
+) -> dict:
     """Send the prep pack email. Skips if a duplicate is detected.
+
+    recipient_email overrides the user's stored email for this send only — it is
+    never persisted. Used for tester/demo email overrides.
 
     Returns a dict with status and message_id.
     """
@@ -167,7 +175,7 @@ def send_prep_pack_email(prep_pack_id: int, user_id: int, db: Session) -> dict:
     subject = f"Prep Pack: {meeting_type} with {company} on {date_str}"
     html_body = _render_html(pack, event, classification)
     plain_body = _render_plain(pack, event)
-    recipient = user.email
+    recipient = recipient_email or user.email
 
     content_hash = _compute_email_hash(recipient, subject, html_body)
 

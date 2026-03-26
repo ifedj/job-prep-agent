@@ -1,13 +1,18 @@
 """Google OAuth routes."""
+import hashlib
+import hmac
 import os
+import secrets
+import time
 from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Query, Request, Response
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 
+from backend.config import get_settings
 from backend.database import get_db
 from backend.deps import get_optional_user
 from backend.models import OAuthToken, User
@@ -16,21 +21,38 @@ from backend.security import create_access_token
 from backend.services.oauth import exchange_code, get_authorization_url, save_tokens
 
 router = APIRouter()
+_settings = get_settings()
 
-# Simple in-memory state store (good enough for single-user MVP)
-_pending_states: dict[str, float] = {}
+
+def _make_state() -> str:
+    """Generate a signed OAuth state token that survives across serverless instances."""
+    nonce = secrets.token_hex(16)
+    ts = str(int(time.time()))
+    msg = f"{nonce}.{ts}"
+    sig = hmac.new(_settings.secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
+    return f"{msg}.{sig}"
+
+
+def _verify_state(state: str) -> bool:
+    """Verify state signature and freshness (10-minute window)."""
+    try:
+        msg, sig = state.rsplit(".", 1)
+        ts_str = msg.split(".")[-1]
+        expected = hmac.new(_settings.secret_key.encode(), msg.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return False
+        if int(time.time()) - int(ts_str) > 600:
+            return False
+        return True
+    except Exception:
+        return False
 
 
 @router.get("/google/start")
-def google_start(response: Response, db: Session = Depends(get_db)):
+def google_start(db: Session = Depends(get_db)):
     """Redirect directly to Google OAuth authorization URL."""
-    url, state = get_authorization_url()
-    _pending_states[state] = datetime.utcnow().timestamp()
-    # Clean up old states
-    cutoff = datetime.utcnow().timestamp() - 600
-    for k in list(_pending_states):
-        if _pending_states[k] < cutoff:
-            del _pending_states[k]
+    state = _make_state()
+    url, _ = get_authorization_url(state=state)
     return RedirectResponse(url=url)
 
 
@@ -45,8 +67,8 @@ def google_callback(
     if error:
         return RedirectResponse(url=f"/?error={error}")
 
-    # Remove state from pending store if present (not strictly required for localhost)
-    _pending_states.pop(state, None)
+    if not _verify_state(state):
+        return RedirectResponse(url="/?error=invalid_state")
 
     try:
         credentials = exchange_code(code, state)
@@ -95,9 +117,8 @@ def google_callback(
 @router.get("/demo")
 def demo_login(db: Session = Depends(get_db)):
     """Log in instantly as the demo user (no Google OAuth required)."""
-    user = db.query(User).first()
+    user = db.query(User).filter(User.email == "demo@jobprepagent.com").first()
     if user is None:
-        # Create a minimal demo user on the fly
         user = User(email="demo@jobprepagent.com", name="Demo User")
         db.add(user)
         db.commit()
@@ -115,9 +136,11 @@ def demo_login(db: Session = Depends(get_db)):
 
 
 @router.post("/logout")
-def logout(response: Response):
-    response.delete_cookie("session_token")
-    return {"message": "Logged out"}
+def logout():
+    # Use JSONResponse directly — FastAPI Response injection fails on Vercel serverless
+    resp = JSONResponse(content={"message": "Logged out"})
+    resp.delete_cookie("session_token")
+    return resp
 
 
 @router.get("/me", response_model=AuthStatus)

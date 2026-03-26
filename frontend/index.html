@@ -110,7 +110,9 @@
         const safeRoles  = form.target_roles  || val('pf-roles');
         const safeBg     = form.background_summary || val('pf-bg');
         const safeProj   = form.key_projects  || val('pf-projects');
+        if (!safeName)  { setError('Your name is required.'); return; }
         if (!safeEmail) { setError('Email address is required.'); return; }
+        if (!safeRoles) { setError('Target roles are required — this is what personalizes your prep packs.'); return; }
         setLoading(true); setError('');
         try {
           const roles = safeRoles.split(',').map(r => r.trim()).filter(Boolean);
@@ -122,7 +124,14 @@
             key_projects: projects,
           });
           setStep(2);
-        } catch (e) { setError(e.message); }
+        } catch (e) {
+          const msg = e.message || '';
+          if (msg.includes('500') || msg.includes('Internal Server Error') || msg.toLowerCase().includes('server')) {
+            setError('Something went wrong. Try clearing your cookies or using an incognito/private window, then try again.');
+          } else {
+            setError(msg);
+          }
+        }
         finally { setLoading(false); }
       }
 
@@ -180,7 +189,7 @@
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Full name</label>
+                  <label className="block text-sm font-medium mb-1">Full name <span className="text-red-500">*</span></label>
                   <input id="pf-name" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={form.name} onChange={e => set('name', e.target.value)} placeholder="Jane Smith"/>
                 </div>
@@ -190,7 +199,7 @@
                     value={form.email} onChange={e => set('email', e.target.value)} onBlur={e => set('email', e.target.value)} placeholder="jane@example.com"/>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium mb-1">Target roles <span className="text-gray-400">(comma-separated)</span></label>
+                  <label className="block text-sm font-medium mb-1">Target roles <span className="text-red-500">*</span> <span className="text-gray-400">(comma-separated)</span></label>
                   <input id="pf-roles" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={form.target_roles} onChange={e => set('target_roles', e.target.value)}
                     placeholder="Software Engineer, Product Manager"/>
@@ -405,8 +414,8 @@
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
                 {clf && <Badge label={clf.effective_label}/>}
-                {daysUntil <= 1 && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Tomorrow</span>}
                 {daysUntil === 0 && <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full font-medium">Today</span>}
+                {daysUntil === 1 && <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-medium">Tomorrow</span>}
               </div>
               <h3 className="font-semibold text-gray-900 truncate">{event.title}</h3>
               <p className="text-sm text-gray-500 mt-1">{fmt(event.start_time)}</p>
@@ -446,9 +455,9 @@
         try {
           const e = await api.get(`/events/${eventId}`);
           setEvent(e);
-          if (e.has_prep_pack) {
-            const packs = await api.get('/prep-packs');
-            const found = packs.find(p => p.event_id === eventId);
+          // Use prep_pack_id from the event directly — no need to fetch all packs
+          if (e.prep_pack_id) {
+            const found = await api.get(`/prep-packs/${e.prep_pack_id}`).catch(() => null);
             if (found) {
               setPack(found);
               const logs = await api.get(`/prep-packs/${found.id}/email-log`).catch(() => []);
@@ -461,9 +470,9 @@
 
       useEffect(() => { load(); }, [load]);
 
-      // Poll while generating
+      // Poll while pending or generating
       useEffect(() => {
-        if (pack?.generation_status === 'generating') {
+        if (pack?.generation_status === 'generating' || pack?.generation_status === 'pending') {
           const t = setInterval(load, 3000);
           return () => clearInterval(t);
         }
@@ -577,11 +586,19 @@
 
           {msg && <div className="mb-4"><Alert type={msg.type} msg={msg.text} onClose={() => setMsg(null)}/></div>}
 
+          {pack?.generation_status === 'pending' && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 text-center mb-6">
+              <div className="flex justify-center mb-2"><Spinner/></div>
+              <p className="text-gray-600 font-medium">Prep pack queued...</p>
+              <p className="text-gray-400 text-sm mt-1">Generation will start shortly</p>
+            </div>
+          )}
+
           {pack?.generation_status === 'generating' && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 text-center mb-6">
               <div className="flex justify-center mb-2"><Spinner/></div>
               <p className="text-blue-700 font-medium">Generating your prep pack...</p>
-              <p className="text-blue-600 text-sm mt-1">This usually takes 15-30 seconds</p>
+              <p className="text-blue-600 text-sm mt-1">This usually takes 15–30 seconds</p>
             </div>
           )}
 
@@ -593,7 +610,7 @@
             <PrepPackView pack={pack} emailLogs={emailLogs}/>
           )}
 
-          {!pack && pack?.generation_status !== 'generating' && (
+          {!pack && (
             <div className="text-center py-12 text-gray-400 bg-white border border-gray-200 rounded-xl">
               <div className="text-4xl mb-3">📋</div>
               <p className="font-medium text-gray-600">No prep pack yet</p>
